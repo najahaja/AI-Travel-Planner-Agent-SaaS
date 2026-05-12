@@ -1,0 +1,20 @@
+{
+  "description": "🌍 Production-grade AI Travel Planner SaaS with FastAPI, LangGraph, RAG, and Enterprise RBAC. Build intelligent, multi-turn travel planning conversations with real-time weather, budget estimation, and personalized itineraries.",
+  "topics": [
+    "ai-agent",
+    "langgraph",
+    "fastapi",
+    "rag",
+    "travel-planning",
+    "saas",
+    "rbac",
+    "chromadb",
+    "langchain",
+    "python",
+    "llm",
+    "travel-planner",
+    "conversational-ai",
+    "multi-agent",
+    "vector-database"
+  ]
+}
