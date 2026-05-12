@@ -16,6 +16,11 @@ venv/
 env/
 ENV/
 
+# Personal / client files
+1.docx
+*.docx
+docx_content.txt
+
 # Environment
 .env
 .env.local

@@ -4,6 +4,13 @@ RAG Pipeline — ChromaDB + Sentence Transformers
 Manages the travel knowledge base vector store.
 """
 import os
+import warnings
+
+# Suppress ChromaDB telemetry BEFORE importing chromadb
+os.environ.setdefault("ANONYMIZED_TELEMETRY", "False")
+os.environ.setdefault("CHROMA_TELEMETRY", "False")
+warnings.filterwarnings("ignore", message=".*telemetry.*")
+
 from typing import List, Optional
 from loguru import logger
 from app.core.config import settings
@@ -34,7 +41,7 @@ def _get_collection():
             embedding_function=_get_embedding_function(),
             metadata={"hnsw:space": "cosine"},
         )
-        logger.info(f"📚 ChromaDB collection loaded: {_collection.count()} documents")
+        logger.info(f"[RAG] ChromaDB collection loaded: {_collection.count()} documents")
     return _collection
 
 
@@ -90,7 +97,7 @@ async def add_documents(
         metadatas=metadatas,
         ids=ids,
     )
-    logger.info(f"✅ Added {len(texts)} documents to RAG store")
+    logger.info(f"[RAG] Added {len(texts)} documents to RAG store")
     return len(texts)
 
 

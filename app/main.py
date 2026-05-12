@@ -14,7 +14,7 @@ from loguru import logger
 from app.core.config import settings
 from app.core.database import init_db
 from app.core.logging import setup_logging
-from app.api.routes import auth, admin, superadmin, agent
+from app.api.routes import auth, admin, superadmin, agent, reports, export
 
 
 # ── Rate Limiter ───────────────────────────────────────────────────────────────
@@ -103,6 +103,8 @@ app.include_router(auth.router)
 app.include_router(superadmin.router)
 app.include_router(admin.router)
 app.include_router(agent.router)
+app.include_router(reports.router)
+app.include_router(export.router)
 
 
 # ── Health Check ───────────────────────────────────────────────────────────────
@@ -121,10 +123,11 @@ async def health_check():
 async def root():
     """Welcome endpoint."""
     return {
-        "message": f"Welcome to {settings.APP_NAME} 🌍",
+        "message": f"Welcome to {settings.APP_NAME}",
         "version": settings.APP_VERSION,
         "docs": "/docs",
         "health": "/health",
+        "features": ["AI Agent", "RAG", "RBAC", "Audit Logs", "PDF Export"],
     }
 
 

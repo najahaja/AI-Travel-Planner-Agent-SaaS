@@ -1,0 +1,77 @@
+name: CI — Test & Lint
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Create test .env
+        run: |
+          cp .env.example .env
+          echo "SECRET_KEY=test-secret-key-for-ci-32-chars-long" >> .env
+          echo "GOOGLE_API_KEY=test-key" >> .env
+          echo "DATABASE_URL=sqlite+aiosqlite:///./test_ci.db" >> .env
+
+      - name: Run tests
+        env:
+          ANONYMIZED_TELEMETRY: "False"
+          CHROMA_TELEMETRY: "False"
+          PYTHONPATH: .
+        run: pytest tests/ -v --tb=short
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: "*.db"
+          retention-days: 1
+
+  lint:
+    name: Code Quality
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install linting tools
+        run: pip install ruff
+
+      - name: Run ruff linter
+        run: ruff check app/ --ignore E501,E402
+
+  docker:
+    name: Docker Build Check
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -f docker/Dockerfile -t travel-planner-agent:ci .

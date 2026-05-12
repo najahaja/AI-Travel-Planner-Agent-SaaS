@@ -2,9 +2,19 @@
 import asyncio
 import sys
 import os
+import warnings
+
+# ── Suppress noisy warnings before any imports ────────────────────────────────
+os.environ["ANONYMIZED_TELEMETRY"] = "False"   # Disable ChromaDB telemetry
+os.environ["CHROMA_TELEMETRY"] = "False"
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+warnings.filterwarnings("ignore", message=".*urllib3.*")
+warnings.filterwarnings("ignore", message=".*chardet.*")
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from app.rag.retriever import add_documents
+
 
 TRAVEL_DOCUMENTS = [
     {
@@ -408,13 +418,18 @@ TECH PACKING TIPS
 
 
 async def seed_rag():
+    print(f"[INFO] Loading {len(TRAVEL_DOCUMENTS)} travel documents into ChromaDB...")
     texts = [doc["content"] for doc in TRAVEL_DOCUMENTS]
     metadatas = [
         {"title": doc["title"], "source": doc["source"]}
         for doc in TRAVEL_DOCUMENTS
     ]
+    for i, doc in enumerate(TRAVEL_DOCUMENTS, 1):
+        print(f"  [{i}/{len(TRAVEL_DOCUMENTS)}] {doc['title']}")
+
     count = await add_documents(texts, metadatas)
-    print(f"✅ Seeded {count} documents into RAG knowledge base")
+    print(f"\n[OK] Successfully seeded {count} documents into RAG knowledge base!")
+    print("[DONE] You can now start the server and the agent will use this knowledge.")
 
 
 if __name__ == "__main__":
