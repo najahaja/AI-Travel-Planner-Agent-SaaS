@@ -1,7 +1,5 @@
 from pydantic_settings import BaseSettings
-from pydantic import AnyHttpUrl
 from typing import List, Optional
-import os
 
 
 class Settings(BaseSettings):
@@ -20,12 +18,9 @@ class Settings(BaseSettings):
     # ── Database ─────────────────────────────────────────────────────────────
     DATABASE_URL: str = "sqlite+aiosqlite:///./travel_planner.db"
 
-    # ── LLM ──────────────────────────────────────────────────────────────────
-    LLM_PROVIDER: str = "groq"
-    LLM_MODEL: str = "llama-3.3-70b-versatile"
-    GOOGLE_API_KEY: Optional[str] = None
-    OPENAI_API_KEY: Optional[str] = None
+    # ── LLM — Groq only ──────────────────────────────────────────────────────
     GROQ_API_KEY: Optional[str] = None
+    LLM_MODEL: str = "llama-3.3-70b-versatile"
 
     # ── RAG ──────────────────────────────────────────────────────────────────
     CHROMA_PERSIST_DIR: str = "./chroma_db"
