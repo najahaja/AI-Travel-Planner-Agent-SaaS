@@ -67,6 +67,7 @@ async def create_user(
     )
     db.add(user)
     await db.flush()
+    await db.commit()
     await db.refresh(user)
     logger.info(f"Admin {current_admin.email} created user: {user.email}")
     return UserResponse.model_validate(user)
@@ -105,6 +106,7 @@ async def update_user(
         user.admin_id = payload.admin_id
 
     await db.flush()
+    await db.commit()
     await db.refresh(user)
     return UserResponse.model_validate(user)
 
@@ -118,6 +120,7 @@ async def delete_user(
     """Delete user — admin restricted to their own users."""
     user = await _get_user_for_admin(user_id, current_admin, db)
     await db.delete(user)
+    await db.commit()
     logger.info(f"Admin {current_admin.email} deleted user: {user.email}")
 
 

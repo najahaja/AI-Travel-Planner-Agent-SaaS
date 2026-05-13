@@ -64,6 +64,7 @@ async def login(
         user_id=user.id, detail=f"Login: {user.role.value}",
         ip_address=ip, user_agent=ua,
     )
+    await db.commit()
     logger.info(f"User logged in: {user.email} ({user.role})")
 
     return TokenResponse(
@@ -99,6 +100,7 @@ async def refresh_token(
         user_id=user.id,
         ip_address=request.client.host if request.client else None,
     )
+    await db.commit()
 
     new_token_data = {"sub": str(user.id), "role": user.role.value}
     return TokenResponse(

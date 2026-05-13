@@ -74,6 +74,7 @@ async def create_admin(
     )
     db.add(admin)
     await db.flush()
+    await db.commit()
     await db.refresh(admin)
     logger.info(f"Super admin created admin: {admin.email}")
     return UserResponse.model_validate(admin)
@@ -120,6 +121,7 @@ async def update_admin(
         admin.password_hash = hash_password(payload.password)
 
     await db.flush()
+    await db.commit()
     await db.refresh(admin)
     return UserResponse.model_validate(admin)
 
@@ -138,6 +140,7 @@ async def delete_admin(
     if not admin:
         raise HTTPException(status_code=404, detail="Admin not found")
     await db.delete(admin)
+    await db.commit()
     logger.info(f"Super admin deleted admin: {admin.email}")
 
 
