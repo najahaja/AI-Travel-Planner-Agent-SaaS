@@ -73,7 +73,45 @@ A professional AI-powered travel planning system with:
     docs_url="/docs",
     redoc_url="/redoc",
     lifespan=lifespan,
+    swagger_ui_parameters={"persistAuthorization": True},
 )
+
+# ── OpenAPI Security Configuration ───────────────────────────────────────────
+from fastapi.openapi.utils import get_openapi
+
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    
+    openapi_schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+    )
+    
+    # Define Bearer Security
+    openapi_schema["components"]["securitySchemes"] = {
+        "BearerAuth": {
+            "type": "http",
+            "scheme": "bearer",
+            "bearerFormat": "JWT",
+            "description": "Enter your JWT access token below. You don't need to type 'Bearer '."
+        }
+    }
+    
+    # Apply to all protected routes automatically in Swagger
+    for path in openapi_schema["paths"]:
+        for method in openapi_schema["paths"][path]:
+            # Add security to all except auth and health
+            tags = openapi_schema["paths"][path][method].get("tags", [])
+            if not any(tag in ["Authentication", "System"] for tag in tags):
+                openapi_schema["paths"][path][method]["security"] = [{"BearerAuth": []}]
+                
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+app.openapi = custom_openapi
 
 # ── Middleware ─────────────────────────────────────────────────────────────────
 app.state.limiter = limiter
@@ -91,7 +129,7 @@ app.add_middleware(
 # ── Global Exception Handler ───────────────────────────────────────────────────
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    logger.error(f"Unhandled exception: {exc}", exc_info=True)
+    logger.error("Unhandled exception: {}", exc, exc_info=True)
     return JSONResponse(
         status_code=500,
         content={"detail": "An internal server error occurred. Please try again."},
@@ -133,9 +171,9 @@ async def root():
 
 # ── Super Admin Seeder ────────────────────────────────────────────────────────
 async def seed_super_admin():
-    """Create the default super admin if not present."""
+    """Create or update the default super admin from settings."""
     from app.core.database import AsyncSessionLocal
-    from app.core.security import hash_password
+    from app.core.security import hash_password, verify_password
     from app.models.user import User, UserRole
     from sqlalchemy import select
 
@@ -143,15 +181,24 @@ async def seed_super_admin():
         result = await db.execute(
             select(User).where(User.role == UserRole.SUPER_ADMIN)
         )
-        if result.scalar_one_or_none():
-            return  # Already exists
+        super_admin = result.scalar_one_or_none()
 
-        super_admin = User(
-            email=settings.SUPER_ADMIN_EMAIL,
-            full_name="Super Administrator",
-            password_hash=hash_password(settings.SUPER_ADMIN_PASSWORD),
-            role=UserRole.SUPER_ADMIN,
-        )
-        db.add(super_admin)
-        await db.commit()
-        logger.info(f"[SEED] Super admin created: {settings.SUPER_ADMIN_EMAIL}")
+        if not super_admin:
+            super_admin = User(
+                email=settings.SUPER_ADMIN_EMAIL,
+                full_name="Super Administrator",
+                password_hash=hash_password(settings.SUPER_ADMIN_PASSWORD),
+                role=UserRole.SUPER_ADMIN,
+            )
+            db.add(super_admin)
+            await db.commit()
+            logger.info(f"[SEED] Super admin created: {settings.SUPER_ADMIN_EMAIL}")
+        else:
+            # Check if password needs update
+            if not verify_password(settings.SUPER_ADMIN_PASSWORD, super_admin.password_hash):
+                super_admin.password_hash = hash_password(settings.SUPER_ADMIN_PASSWORD)
+                super_admin.email = settings.SUPER_ADMIN_EMAIL  # Also sync email if changed
+                await db.commit()
+                logger.info(f"[SEED] Super admin credentials updated from .env")
+            else:
+                logger.debug("[SEED] Super admin already exists and is up to date.")

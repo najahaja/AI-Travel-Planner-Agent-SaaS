@@ -51,12 +51,19 @@ async def create_user(
     if current_admin.role == UserRole.SUPER_ADMIN and payload.role == UserRole.ADMIN:
         target_role = UserRole.ADMIN
 
+    # Determine admin_id
+    assigned_admin_id = None
+    if current_admin.role == UserRole.SUPER_ADMIN:
+        assigned_admin_id = payload.admin_id
+    elif current_admin.role == UserRole.ADMIN:
+        assigned_admin_id = current_admin.id
+
     user = User(
         email=payload.email,
         full_name=payload.full_name,
         password_hash=hash_password(payload.password),
         role=target_role,
-        admin_id=current_admin.id if current_admin.role == UserRole.ADMIN else None,
+        admin_id=assigned_admin_id,
     )
     db.add(user)
     await db.flush()
@@ -94,6 +101,8 @@ async def update_user(
         user.is_active = payload.is_active
     if payload.password:
         user.password_hash = hash_password(payload.password)
+    if payload.admin_id is not None and current_admin.role == UserRole.SUPER_ADMIN:
+        user.admin_id = payload.admin_id
 
     await db.flush()
     await db.refresh(user)

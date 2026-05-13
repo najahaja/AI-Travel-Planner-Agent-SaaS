@@ -14,7 +14,6 @@ import operator
 import json
 
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage
-from langchain_core.prompts import ChatPromptTemplate
 from langgraph.graph import StateGraph, END
 
 from app.agent.llm import get_llm
@@ -61,41 +60,62 @@ Your capabilities:
 
 Always respond in a professional, helpful, and enthusiastic manner.
 When planning a trip, always ask for: destination, travel dates, number of travelers, and budget preference if not provided.
-Structure your responses clearly with headers and bullet points.
-"""
+Structure your responses clearly with headers and bullet points."""
+
 
 # ── Node: Classify Intent ──────────────────────────────────────────────────────
 async def classify_intent(state: AgentState) -> AgentState:
     """Classify user intent and extract key travel parameters."""
     llm = get_llm()
 
-    classification_prompt = ChatPromptTemplate.from_messages([
-        ("system", """You are a travel intent classifier. Analyze the user message and extract:
+    classification_prompt = f"""You are a travel intent classifier. Analyze the user message and extract:
 1. intent: one of [itinerary_planning, budget_estimation, weather_info, general_question, destination_research, greeting, unclear]
 2. destination: city/country if mentioned (null if not)
-3. start_date: travel start date if mentioned (null if not)
-4. end_date: travel end date if mentioned (null if not)
+3. start_date: travel start date if mentioned in YYYY-MM-DD format (null if not)
+4. end_date: travel end date if mentioned in YYYY-MM-DD format (null if not)
 5. travelers: number of travelers if mentioned (null if not)
 6. budget_range: budget preference if mentioned - "budget", "mid-range", or "luxury" (null if not)
 
-Respond ONLY with valid JSON like:
+Respond ONLY with valid JSON. No explanation. Example:
 {{"intent": "itinerary_planning", "destination": "Paris", "start_date": "2025-06-01", "end_date": "2025-06-07", "travelers": 2, "budget_range": "mid-range"}}
-"""),
-        ("human", "{query}"),
-    ])
+
+User message: {state["user_query"]}"""
 
     try:
-        chain = classification_prompt | llm
-        result = await chain.ainvoke({"query": state["user_query"]})
-        raw = result.content.strip()
+        result = await llm.ainvoke([HumanMessage(content=classification_prompt)])
 
-        # Extract JSON
+        # Ensure content is string
+        raw = result.content
+        if isinstance(raw, list):
+            raw = "".join([c.get("text", "") if isinstance(c, dict) else str(c) for c in raw])
+        raw = raw.strip()
+
+        # Extract JSON from possible markdown fences
         if "```json" in raw:
             raw = raw.split("```json")[1].split("```")[0].strip()
         elif "```" in raw:
             raw = raw.split("```")[1].split("```")[0].strip()
 
+        # Find JSON object boundaries
+        start_idx = raw.find("{")
+        end_idx = raw.rfind("}") + 1
+        if start_idx >= 0 and end_idx > start_idx:
+            raw = raw[start_idx:end_idx]
+
         parsed = json.loads(raw)
+
+        # Ensure travelers is int
+        travelers = parsed.get("travelers")
+        if travelers is not None:
+            try:
+                if isinstance(travelers, str):
+                    import re
+                    match = re.search(r'\d+', travelers)
+                    travelers = int(match.group()) if match else 1
+                else:
+                    travelers = int(travelers)
+            except (ValueError, TypeError):
+                travelers = 1
 
         return {
             **state,
@@ -103,7 +123,7 @@ Respond ONLY with valid JSON like:
             "destination": parsed.get("destination"),
             "start_date": parsed.get("start_date"),
             "end_date": parsed.get("end_date"),
-            "travelers": parsed.get("travelers"),
+            "travelers": travelers,
             "budget_range": parsed.get("budget_range"),
         }
     except Exception as e:
@@ -201,20 +221,41 @@ async def synthesize_response(state: AgentState) -> AgentState:
     if state.get("itinerary_data"):
         context_parts.append(f"## Itinerary Plan\n{json.dumps(state['itinerary_data'], indent=2)}")
 
-    gathered_context = "\n\n".join(context_parts)
+    gathered_context = "\n\n".join(context_parts) if context_parts else "No additional data gathered."
 
-    synthesis_prompt = ChatPromptTemplate.from_messages([
-        ("system", SYSTEM_PROMPT),
-        ("system", f"Use the following data to craft your response:\n\n{gathered_context}" if gathered_context else ""),
-        *[("human" if isinstance(m, HumanMessage) else "assistant", m.content)
-          for m in state.get("messages", [])[-6:]],  # Last 6 messages for context
-        ("human", "{query}"),
-    ])
+    # Build conversation history string (last 6 messages)
+    history_text = ""
+    past_messages = state.get("messages", [])[-6:]
+    if past_messages:
+        history_lines = []
+        for m in past_messages:
+            role = "User" if isinstance(m, HumanMessage) else "Assistant"
+            content = m.content if isinstance(m.content, str) else str(m.content)
+            history_lines.append(f"{role}: {content}")
+        history_text = "\n".join(history_lines)
+
+    # Single prompt string — Groq works best with simple message lists
+    system_message = f"""{SYSTEM_PROMPT}
+
+Use the following gathered data to craft your response:
+
+{gathered_context}"""
+
+    user_message = ""
+    if history_text:
+        user_message += f"Previous conversation:\n{history_text}\n\n"
+    user_message += f"Current question: {state['user_query']}"
 
     try:
-        chain = synthesis_prompt | llm
-        result = await chain.ainvoke({"query": state["user_query"]})
+        result = await llm.ainvoke([
+            SystemMessage(content=system_message),
+            HumanMessage(content=user_message),
+        ])
+
+        # Ensure content is string
         response = result.content
+        if isinstance(response, list):
+            response = "".join([c.get("text", "") if isinstance(c, dict) else str(c) for c in response])
 
         # Build travel plan if we have enough data
         travel_plan = None
@@ -245,30 +286,39 @@ async def synthesize_response(state: AgentState) -> AgentState:
         return {**state, "final_response": error_msg, "error": str(e)}
 
 
-# ── Router: Intent → Nodes ────────────────────────────────────────────────────
-def route_by_intent(state: AgentState) -> List[str]:
-    """Determine which tool nodes to run based on classified intent."""
+# ── Router: classify → next node ──────────────────────────────────────────────
+def intent_router(state: AgentState) -> str:
+    """After intent classification, route to RAG or directly to synthesis."""
     intent = state.get("intent", "general_question")
+    if intent == "greeting":
+        return "synthesize_response"
+    return "rag_retrieval"
 
-    if intent == "itinerary_planning":
-        return ["rag_retrieval", "weather_node", "budget_node", "itinerary_node"]
-    elif intent == "budget_estimation":
-        return ["rag_retrieval", "budget_node"]
-    elif intent == "weather_info":
-        return ["weather_node"]
-    elif intent in ["destination_research", "general_question"]:
-        return ["rag_retrieval"]
-    elif intent == "greeting":
-        return []
-    else:
-        return ["rag_retrieval"]
+
+# ── Router: rag → next node ───────────────────────────────────────────────────
+def tool_router(state: AgentState) -> str:
+    """After RAG retrieval, decide which tool chain to run."""
+    intent = state.get("intent", "general_question")
+    if intent == "weather_info":
+        return "weather_node"
+    if intent in ("budget_estimation", "itinerary_planning"):
+        return "weather_node"   # weather → budget → (maybe itinerary) → synthesis
+    return "synthesize_response"
+
+
+# ── Router: budget → next node ────────────────────────────────────────────────
+def budget_router(state: AgentState) -> str:
+    """After budget estimation, go to itinerary if planning, else synthesize."""
+    if state.get("intent") == "itinerary_planning":
+        return "itinerary_node"
+    return "synthesize_response"
 
 
 # ── Build Graph ────────────────────────────────────────────────────────────────
 def build_agent_graph() -> StateGraph:
     workflow = StateGraph(AgentState)
 
-    # Add nodes
+    # Register nodes
     workflow.add_node("classify_intent", classify_intent)
     workflow.add_node("rag_retrieval", rag_retrieval)
     workflow.add_node("weather_node", weather_node)
@@ -276,28 +326,59 @@ def build_agent_graph() -> StateGraph:
     workflow.add_node("itinerary_node", itinerary_node)
     workflow.add_node("synthesize_response", synthesize_response)
 
-    # Entry → classify
+    # Entry point
     workflow.set_entry_point("classify_intent")
 
-    # After classification, fan out to relevant tools then converge to synthesis
-    # We use a sequential approach: classify → rag → weather → budget → itinerary → synthesize
-    # (nodes are skipped if intent doesn't require them)
-    workflow.add_edge("classify_intent", "rag_retrieval")
-    workflow.add_edge("rag_retrieval", "weather_node")
+    # classify_intent → (greeting → synthesis | everything else → rag)
+    workflow.add_conditional_edges(
+        "classify_intent",
+        intent_router,
+        {
+            "synthesize_response": "synthesize_response",
+            "rag_retrieval": "rag_retrieval",
+        },
+    )
+
+    # rag_retrieval → (weather | synthesis)
+    workflow.add_conditional_edges(
+        "rag_retrieval",
+        tool_router,
+        {
+            "weather_node": "weather_node",
+            "synthesize_response": "synthesize_response",
+        },
+    )
+
+    # weather_node always feeds into budget_node
     workflow.add_edge("weather_node", "budget_node")
-    workflow.add_edge("budget_node", "itinerary_node")
+
+    # budget_node → (itinerary | synthesis)  — ONE conditional edge only
+    workflow.add_conditional_edges(
+        "budget_node",
+        budget_router,
+        {
+            "itinerary_node": "itinerary_node",
+            "synthesize_response": "synthesize_response",
+        },
+    )
+
+    # itinerary_node → synthesis
     workflow.add_edge("itinerary_node", "synthesize_response")
+
+    # synthesis → END
     workflow.add_edge("synthesize_response", END)
 
     return workflow.compile()
 
 
-# Singleton compiled graph
+# ── Singleton compiled graph ───────────────────────────────────────────────────
 _agent_graph = None
 
 
 def get_agent_graph():
     global _agent_graph
     if _agent_graph is None:
+        logger.info("[AGENT] Compiling LangGraph agent...")
         _agent_graph = build_agent_graph()
+        logger.info("[AGENT] Agent graph ready.")
     return _agent_graph

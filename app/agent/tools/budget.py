@@ -110,8 +110,11 @@ async def estimate_budget(
 
         misc_per_person = round((hotel_total + food_total + activities_total) * 0.10)
 
+        # Ensure travelers is a valid integer
+        num_travelers = int(travelers) if travelers and str(travelers).isdigit() else 1
+        
         per_person_subtotal = hotel_total + food_total + transport_local + activities_total + misc_per_person
-        total_all_travelers = (per_person_subtotal + flight_pp) * travelers
+        total_all_travelers = (per_person_subtotal + flight_pp) * num_travelers
 
         return {
             "destination": destination,

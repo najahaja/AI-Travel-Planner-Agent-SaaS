@@ -96,7 +96,7 @@ async def chat(
         title = payload.message[:80] + ("..." if len(payload.message) > 80 else "")
         session = ChatSession(user_id=current_user.id, title=title)
         db.add(session)
-        await db.flush()
+        await db.flush()  # Get session.id before adding messages
 
     # 4. Save messages
     user_msg = Message(session_id=session.id, role="user", content=payload.message)
@@ -130,10 +130,16 @@ async def chat(
                 pass
 
         db.add(plan)
-        await db.flush()
+        await db.flush()  # Get plan.id
         travel_plan_id = plan.id
 
-    await db.flush()
+    # Commit everything: session, messages, and optional travel plan
+    try:
+        await db.commit()
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"DB commit failed for user {current_user.id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to save chat history. Please try again.")
 
     return ChatResponse(
         session_id=session.id,
@@ -220,6 +226,7 @@ async def delete_session(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     await db.delete(session)
+    await db.commit()
 
 
 @router.get("/trips", response_model=TravelPlanListResponse)

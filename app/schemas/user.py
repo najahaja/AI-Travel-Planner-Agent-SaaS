@@ -10,6 +10,7 @@ class UserCreate(BaseModel):
     full_name: str = Field(..., min_length=2, max_length=255)
     password: str = Field(..., min_length=8, max_length=128)
     role: UserRole = UserRole.USER
+    admin_id: Optional[int] = None
 
     @model_validator(mode="after")
     def validate_password_strength(self):
@@ -36,6 +37,7 @@ class UserUpdate(BaseModel):
     email: Optional[EmailStr] = None
     is_active: Optional[bool] = None
     password: Optional[str] = Field(None, min_length=8)
+    admin_id: Optional[int] = None
 
 
 # ── Response ──────────────────────────────────────────────────────────────────

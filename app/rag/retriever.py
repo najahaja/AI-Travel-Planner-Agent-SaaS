@@ -7,9 +7,25 @@ import os
 import warnings
 
 # Suppress ChromaDB telemetry BEFORE importing chromadb
-os.environ.setdefault("ANONYMIZED_TELEMETRY", "False")
-os.environ.setdefault("CHROMA_TELEMETRY", "False")
+os.environ["ANONYMIZED_TELEMETRY"] = "False"
+os.environ["CHROMA_TELEMETRY"] = "False"
 warnings.filterwarnings("ignore", message=".*telemetry.*")
+
+# Brute-force monkeypatch to silence the "capture() takes 1 positional argument" error
+# which occurs due to version mismatch between ChromaDB 0.5.0 and newer PostHog versions.
+try:
+    import posthog
+    def no_op_capture(*args, **kwargs):
+        pass
+    posthog.capture = no_op_capture
+    
+    import chromadb.telemetry.product.posthog
+    if hasattr(chromadb.telemetry.product.posthog, "Posthog"):
+        chromadb.telemetry.product.posthog.Posthog._direct_capture = no_op_capture
+except ImportError:
+    pass
+except Exception:
+    pass
 
 from typing import List, Optional
 from loguru import logger
@@ -35,7 +51,13 @@ def _get_collection():
     global _chroma_client, _collection
     if _collection is None:
         import chromadb
-        _chroma_client = chromadb.PersistentClient(path=settings.CHROMA_PERSIST_DIR)
+        from chromadb.config import Settings
+        
+        # Initialize client with explicit telemetry disabled to avoid library conflicts
+        _chroma_client = chromadb.PersistentClient(
+            path=settings.CHROMA_PERSIST_DIR,
+            settings=Settings(anonymized_telemetry=False)
+        )
         _collection = _chroma_client.get_or_create_collection(
             name="travel_knowledge",
             embedding_function=_get_embedding_function(),
@@ -92,7 +114,7 @@ async def add_documents(
         import uuid
         ids = [str(uuid.uuid4()) for _ in texts]
 
-    collection.add(
+    collection.upsert(
         documents=texts,
         metadatas=metadatas,
         ids=ids,

@@ -21,10 +21,11 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite+aiosqlite:///./travel_planner.db"
 
     # ── LLM ──────────────────────────────────────────────────────────────────
-    LLM_PROVIDER: str = "google"
-    LLM_MODEL: str = "gemini-1.5-flash"
+    LLM_PROVIDER: str = "groq"
+    LLM_MODEL: str = "llama-3.3-70b-versatile"
     GOOGLE_API_KEY: Optional[str] = None
     OPENAI_API_KEY: Optional[str] = None
+    GROQ_API_KEY: Optional[str] = None
 
     # ── RAG ──────────────────────────────────────────────────────────────────
     CHROMA_PERSIST_DIR: str = "./chroma_db"
@@ -37,7 +38,7 @@ class Settings(BaseSettings):
 
     # ── Super Admin Seed ─────────────────────────────────────────────────────
     SUPER_ADMIN_EMAIL: str = "superadmin@travelplanner.com"
-    SUPER_ADMIN_PASSWORD: str = "SuperAdmin@2025!"
+    SUPER_ADMIN_PASSWORD: str = "SuperAdmin@2026!"
 
     # ── Rate Limiting ─────────────────────────────────────────────────────────
     RATE_LIMIT_CHAT: str = "20/minute"

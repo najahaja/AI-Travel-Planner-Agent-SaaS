@@ -419,15 +419,23 @@ TECH PACKING TIPS
 
 async def seed_rag():
     print(f"[INFO] Loading {len(TRAVEL_DOCUMENTS)} travel documents into ChromaDB...")
-    texts = [doc["content"] for doc in TRAVEL_DOCUMENTS]
-    metadatas = [
-        {"title": doc["title"], "source": doc["source"]}
-        for doc in TRAVEL_DOCUMENTS
-    ]
+    
+    import hashlib
+    
+    texts = []
+    metadatas = []
+    ids = []
+    
     for i, doc in enumerate(TRAVEL_DOCUMENTS, 1):
         print(f"  [{i}/{len(TRAVEL_DOCUMENTS)}] {doc['title']}")
+        texts.append(doc["content"])
+        metadatas.append({"title": doc["title"], "source": doc["source"]})
+        # Create a stable ID based on the title to prevent duplicates
+        doc_id = hashlib.md5(doc["title"].encode()).hexdigest()
+        ids.append(doc_id)
 
-    count = await add_documents(texts, metadatas)
+    # Use add_documents with explicit IDs
+    count = await add_documents(texts, metadatas, ids=ids)
     print(f"\n[OK] Successfully seeded {count} documents into RAG knowledge base!")
     print("[DONE] You can now start the server and the agent will use this knowledge.")
 
