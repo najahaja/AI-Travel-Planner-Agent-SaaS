@@ -107,9 +107,8 @@ def custom_openapi():
     # Apply to all protected routes automatically in Swagger
     for path in openapi_schema["paths"]:
         for method in openapi_schema["paths"][path]:
-            # Add security to all except auth and health
-            tags = openapi_schema["paths"][path][method].get("tags", [])
-            if not any(tag in ["Authentication", "System"] for tag in tags):
+            # Add security to all endpoints except login, refresh, and system health
+            if path not in ["/auth/login", "/auth/refresh", "/health", "/"]:
                 openapi_schema["paths"][path][method]["security"] = [{"BearerAuth": []}]
                 
     app.openapi_schema = openapi_schema
