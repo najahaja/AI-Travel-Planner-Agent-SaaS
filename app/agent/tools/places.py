@@ -1,7 +1,9 @@
 """Google Places API (New) tool for destination attraction search."""
 from typing import Any, Dict, List, Optional
 
+# pyrefly: ignore [missing-import]
 import httpx
+# pyrefly: ignore [missing-import]
 from loguru import logger
 
 from app.core.config import settings
