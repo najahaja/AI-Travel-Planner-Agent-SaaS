@@ -9,6 +9,7 @@ from app.models.user import User, UserRole
 from app.models.travel import TravelPlan
 from app.schemas.user import UserCreate, UserResponse, UserListResponse, UserUpdate
 from app.schemas.travel import TravelPlanListResponse, TravelPlanResponse
+# pyrefly: ignore [missing-import]
 from loguru import logger
 
 router = APIRouter(prefix="/admin", tags=["Admin"])

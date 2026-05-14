@@ -2,7 +2,8 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 from sqlalchemy.orm import DeclarativeBase
 from fastapi import HTTPException
 from app.core.config import settings
-from loguru import logger
+# pyrefly: ignore [missing-import]
+from loguru import logger   
 
 
 engine = create_async_engine(

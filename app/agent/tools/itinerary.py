@@ -2,7 +2,9 @@
 from typing import Optional, Dict, Any
 from datetime import datetime
 from app.agent.llm import get_llm
+# pyrefly: ignore [missing-import]
 from langchain_core.messages import HumanMessage, SystemMessage
+# pyrefly: ignore [missing-import]
 from loguru import logger
 import json
 
@@ -14,6 +16,7 @@ async def build_itinerary(
     travelers: int = 1,
     budget_range: str = "mid-range",
     rag_context: str = "",
+    places_context: str = "",
 ) -> Dict[str, Any]:
     """Generate a detailed day-by-day itinerary using the LLM."""
 
@@ -93,6 +96,9 @@ Make it practical, exciting, and include local gems beyond typical tourist spots
 
     if rag_context:
         user_content += f"\n\nAdditional travel context:\n{rag_context}"
+
+    if places_context:
+        user_content += f"\n\nLive Google Places recommendations to prioritize:\n{places_context}"
 
     try:
         llm = get_llm()

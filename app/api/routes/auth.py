@@ -12,6 +12,7 @@ from app.core.security import (
 from app.models.user import User, UserRole
 from app.schemas.user import LoginRequest, TokenResponse, UserResponse, RefreshRequest
 from app.services.audit import log_action, AuditActions
+# pyrefly: ignore [missing-import]
 from loguru import logger
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])

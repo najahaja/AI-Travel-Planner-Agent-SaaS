@@ -10,6 +10,7 @@ from app.models.chat import ChatSession
 from app.models.travel import TravelPlan
 from app.schemas.user import AdminCreate, UserResponse, UserListResponse, UserUpdate
 from app.schemas.travel import SuperAdminAnalytics
+# pyrefly: ignore [missing-import]
 from loguru import logger
 
 router = APIRouter(prefix="/superadmin", tags=["Super Admin"])

@@ -1,5 +1,7 @@
 """Budget estimation tool — generates realistic cost breakdowns."""
+# pyrefly: ignore [missing-import]
 from typing import Optional, Dict, Any
+# pyrefly: ignore [missing-import]
 from loguru import logger
 
 # Cost database (USD per person per day) by budget tier and region

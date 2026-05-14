@@ -15,8 +15,11 @@ from app.schemas.chat import (
 )
 from app.schemas.travel import TravelPlanResponse, TravelPlanListResponse
 from app.agent.graph import get_agent_graph, AgentState
+# pyrefly: ignore [missing-import]
 from langchain_core.messages import HumanMessage
+# pyrefly: ignore [missing-import]
 from loguru import logger
+# pyrefly: ignore [missing-import]
 from datetime import date
 
 router = APIRouter(prefix="/agent", tags=["Travel Agent"])
@@ -59,6 +62,7 @@ async def chat(
             if m.role == "user":
                 history_messages.append(HumanMessage(content=m.content))
             else:
+                # pyrefly: ignore [missing-import]
                 from langchain_core.messages import AIMessage
                 history_messages.append(AIMessage(content=m.content))
 
@@ -75,9 +79,9 @@ async def chat(
         "budget_range": None,
         "rag_context": None,
         "weather_data": None,
+        "places_data": None,
         "budget_data": None,
         "itinerary_data": None,
-        "currency_data": None,
         "final_response": None,
         "travel_plan": None,
         "error": None,

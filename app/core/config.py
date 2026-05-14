@@ -28,8 +28,7 @@ class Settings(BaseSettings):
 
     # ── External APIs ─────────────────────────────────────────────────────────
     OPENWEATHER_API_KEY: Optional[str] = None
-    UNSPLASH_ACCESS_KEY: Optional[str] = None
-    EXCHANGE_RATE_API_KEY: Optional[str] = None
+    GOOGLE_PLACES_API_KEY: Optional[str] = None
 
     # ── Super Admin Seed ─────────────────────────────────────────────────────
     SUPER_ADMIN_EMAIL: str = "superadmin@travelplanner.com"

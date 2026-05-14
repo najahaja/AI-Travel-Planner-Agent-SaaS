@@ -13,6 +13,7 @@ from datetime import datetime
 import operator
 import json
 
+# pyrefly: ignore [missing-import]
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage
 from langgraph.graph import StateGraph, END
 
@@ -20,12 +21,14 @@ from app.agent.llm import get_llm
 from app.agent.tools.weather import get_weather_info
 from app.agent.tools.budget import estimate_budget
 from app.agent.tools.itinerary import build_itinerary
-from app.agent.tools.currency import convert_currency
+
+from app.agent.tools.places import search_places_to_visit, format_places_for_prompt
 from app.rag.retriever import retrieve_travel_info
+# pyrefly: ignore [missing-import]
 from loguru import logger
 
 
-# ── Agent State ────────────────────────────────────────────────────────────────
+# Agent State
 class AgentState(TypedDict):
     messages: Annotated[List[BaseMessage], operator.add]
     user_query: str
@@ -37,15 +40,15 @@ class AgentState(TypedDict):
     budget_range: Optional[str]     # "budget" | "mid-range" | "luxury"
     rag_context: Optional[str]
     weather_data: Optional[Dict]
+    places_data: Optional[Dict]
     budget_data: Optional[Dict]
     itinerary_data: Optional[Dict]
-    currency_data: Optional[Dict]
     final_response: Optional[str]
     travel_plan: Optional[Dict]     # structured plan to save to DB
     error: Optional[str]
 
 
-# ── System Prompt ─────────────────────────────────────────────────────────────
+# System Prompt
 SYSTEM_PROMPT = """You are an expert AI Travel Planner with deep knowledge of global destinations, 
 travel logistics, budgeting, cultural insights, and itinerary design.
 
@@ -55,15 +58,22 @@ Your capabilities:
 - Provide weather insights and best travel times
 - Offer visa requirements and travel advisories
 - Recommend hidden gems and off-the-beaten-path experiences
-- Convert currencies and provide cost comparisons
+- Search live Google Places data for attractions and places to visit
 - Answer questions using a knowledge base of travel guides
 
 Always respond in a professional, helpful, and enthusiastic manner.
 When planning a trip, always ask for: destination, travel dates, number of travelers, and budget preference if not provided.
-Structure your responses clearly with headers and bullet points."""
+Structure your responses clearly with headers and bullet points.
+Return response in clean Markdown format.
+Do NOT escape new lines (no \n in output).
+Use proper Markdown syntax:
+- Headings using #
+- Bold using **
+- Lists using numbers or -
+Ensure output is formatted for direct rendering in UI, not as a JSON string."""
 
 
-# ── Node: Classify Intent ──────────────────────────────────────────────────────
+# Node: Classify Intent
 async def classify_intent(state: AgentState) -> AgentState:
     """Classify user intent and extract key travel parameters."""
     llm = get_llm()
@@ -75,6 +85,8 @@ async def classify_intent(state: AgentState) -> AgentState:
 4. end_date: travel end date if mentioned in YYYY-MM-DD format (null if not)
 5. travelers: number of travelers if mentioned (null if not)
 6. budget_range: budget preference if mentioned - "budget", "mid-range", or "luxury" (null if not)
+
+Use destination_research when the user asks for attractions, landmarks, things to do, places to visit, restaurants, museums, activities, or destination recommendations without asking for a full day-by-day itinerary.
 
 Respond ONLY with valid JSON. No explanation. Example:
 {{"intent": "itinerary_planning", "destination": "Paris", "start_date": "2025-06-01", "end_date": "2025-06-07", "travelers": 2, "budget_range": "mid-range"}}
@@ -131,7 +143,7 @@ User message: {state["user_query"]}"""
         return {**state, "intent": "general_question"}
 
 
-# ── Node: RAG Retrieval ────────────────────────────────────────────────────────
+# Node: RAG Retrieval
 async def rag_retrieval(state: AgentState) -> AgentState:
     """Retrieve relevant travel information from the knowledge base."""
     try:
@@ -146,7 +158,7 @@ async def rag_retrieval(state: AgentState) -> AgentState:
         return {**state, "rag_context": ""}
 
 
-# ── Node: Weather Tool ─────────────────────────────────────────────────────────
+# Node: Weather Tool
 async def weather_node(state: AgentState) -> AgentState:
     """Fetch weather information for the destination."""
     if not state.get("destination"):
@@ -160,7 +172,21 @@ async def weather_node(state: AgentState) -> AgentState:
         return state
 
 
-# ── Node: Budget Estimation ────────────────────────────────────────────────────
+# Node: Budget Estimation
+async def places_node(state: AgentState) -> AgentState:
+    """Fetch live attractions and places to visit for the destination."""
+    if not state.get("destination"):
+        return state
+
+    try:
+        query = f"best places to visit in {state['destination']}"
+        places = await search_places_to_visit(state["destination"], query=query)
+        return {**state, "places_data": places}
+    except Exception as e:
+        logger.warning(f"Google Places tool error: {e}")
+        return state
+
+
 async def budget_node(state: AgentState) -> AgentState:
     """Estimate travel budget based on destination and preferences."""
     if not state.get("destination"):
@@ -180,7 +206,7 @@ async def budget_node(state: AgentState) -> AgentState:
         return state
 
 
-# ── Node: Itinerary Builder ────────────────────────────────────────────────────
+# Node: Itinerary Builder
 async def itinerary_node(state: AgentState) -> AgentState:
     """Build a detailed day-by-day itinerary."""
     if not state.get("destination"):
@@ -194,6 +220,7 @@ async def itinerary_node(state: AgentState) -> AgentState:
             travelers=state.get("travelers", 1),
             budget_range=state.get("budget_range", "mid-range"),
             rag_context=state.get("rag_context", ""),
+            places_context=format_places_for_prompt(state.get("places_data")),
         )
         return {**state, "itinerary_data": itinerary}
     except Exception as e:
@@ -201,7 +228,7 @@ async def itinerary_node(state: AgentState) -> AgentState:
         return state
 
 
-# ── Node: Synthesize Response ──────────────────────────────────────────────────
+# Node: Synthesize Response
 async def synthesize_response(state: AgentState) -> AgentState:
     """Synthesize all gathered data into a final polished response."""
     llm = get_llm()
@@ -209,17 +236,23 @@ async def synthesize_response(state: AgentState) -> AgentState:
     # Build context for synthesis
     context_parts = []
 
-    if state.get("rag_context"):
+    has_itinerary = bool(state.get("itinerary_data"))
+
+    if state.get("rag_context") and not has_itinerary:
         context_parts.append(f"## Travel Knowledge Base\n{state['rag_context']}")
 
     if state.get("weather_data"):
-        context_parts.append(f"## Weather Data\n{json.dumps(state['weather_data'], indent=2)}")
+        context_parts.append(f"## Weather Data\n{json.dumps(state['weather_data'])}")
+
+    if state.get("places_data") and not has_itinerary:
+        places_str = format_places_for_prompt(state.get("places_data"))
+        context_parts.append(f"## Google Places Recommendations\n{places_str}")
 
     if state.get("budget_data"):
-        context_parts.append(f"## Budget Estimation\n{json.dumps(state['budget_data'], indent=2)}")
+        context_parts.append(f"## Budget Estimation\n{json.dumps(state['budget_data'])}")
 
     if state.get("itinerary_data"):
-        context_parts.append(f"## Itinerary Plan\n{json.dumps(state['itinerary_data'], indent=2)}")
+        context_parts.append(f"## Itinerary Plan\n{json.dumps(state['itinerary_data'])}")
 
     gathered_context = "\n\n".join(context_parts) if context_parts else "No additional data gathered."
 
@@ -267,6 +300,7 @@ Use the following gathered data to craft your response:
                 "itinerary": state.get("itinerary_data"),
                 "budget": state.get("budget_data"),
                 "weather_info": state.get("weather_data"),
+                "places": state.get("places_data"),
                 "estimated_cost_usd": (
                     state["budget_data"].get("total_usd")
                     if state.get("budget_data") else None
@@ -286,7 +320,7 @@ Use the following gathered data to craft your response:
         return {**state, "final_response": error_msg, "error": str(e)}
 
 
-# ── Router: classify → next node ──────────────────────────────────────────────
+# Router: classify → next node
 def intent_router(state: AgentState) -> str:
     """After intent classification, route to RAG or directly to synthesis."""
     intent = state.get("intent", "general_question")
@@ -295,18 +329,36 @@ def intent_router(state: AgentState) -> str:
     return "rag_retrieval"
 
 
-# ── Router: rag → next node ───────────────────────────────────────────────────
+# Router: rag → next node
 def tool_router(state: AgentState) -> str:
     """After RAG retrieval, decide which tool chain to run."""
     intent = state.get("intent", "general_question")
     if intent == "weather_info":
         return "weather_node"
+    if intent == "destination_research":
+        return "places_node"
     if intent in ("budget_estimation", "itinerary_planning"):
-        return "weather_node"   # weather → budget → (maybe itinerary) → synthesis
+        return "weather_node"
     return "synthesize_response"
 
 
-# ── Router: budget → next node ────────────────────────────────────────────────
+# Router: budget → next node
+def weather_router(state: AgentState) -> str:
+    """After weather, continue planning or finish weather-only requests."""
+    if state.get("intent") == "weather_info":
+        return "synthesize_response"
+    if state.get("intent") == "itinerary_planning":
+        return "places_node"
+    return "budget_node"
+
+
+def places_router(state: AgentState) -> str:
+    """After live place search, continue itinerary planning or synthesize."""
+    if state.get("intent") == "itinerary_planning":
+        return "budget_node"
+    return "synthesize_response"
+
+
 def budget_router(state: AgentState) -> str:
     """After budget estimation, go to itinerary if planning, else synthesize."""
     if state.get("intent") == "itinerary_planning":
@@ -314,7 +366,7 @@ def budget_router(state: AgentState) -> str:
     return "synthesize_response"
 
 
-# ── Build Graph ────────────────────────────────────────────────────────────────
+# Build Graph
 def build_agent_graph() -> StateGraph:
     workflow = StateGraph(AgentState)
 
@@ -322,6 +374,7 @@ def build_agent_graph() -> StateGraph:
     workflow.add_node("classify_intent", classify_intent)
     workflow.add_node("rag_retrieval", rag_retrieval)
     workflow.add_node("weather_node", weather_node)
+    workflow.add_node("places_node", places_node)
     workflow.add_node("budget_node", budget_node)
     workflow.add_node("itinerary_node", itinerary_node)
     workflow.add_node("synthesize_response", synthesize_response)
@@ -345,12 +398,29 @@ def build_agent_graph() -> StateGraph:
         tool_router,
         {
             "weather_node": "weather_node",
+            "places_node": "places_node",
             "synthesize_response": "synthesize_response",
         },
     )
 
-    # weather_node always feeds into budget_node
-    workflow.add_edge("weather_node", "budget_node")
+    workflow.add_conditional_edges(
+        "weather_node",
+        weather_router,
+        {
+            "places_node": "places_node",
+            "budget_node": "budget_node",
+            "synthesize_response": "synthesize_response",
+        },
+    )
+
+    workflow.add_conditional_edges(
+        "places_node",
+        places_router,
+        {
+            "budget_node": "budget_node",
+            "synthesize_response": "synthesize_response",
+        },
+    )
 
     # budget_node → (itinerary | synthesis)  — ONE conditional edge only
     workflow.add_conditional_edges(
@@ -371,7 +441,7 @@ def build_agent_graph() -> StateGraph:
     return workflow.compile()
 
 
-# ── Singleton compiled graph ───────────────────────────────────────────────────
+# Singleton compiled graph
 _agent_graph = None
 
 
