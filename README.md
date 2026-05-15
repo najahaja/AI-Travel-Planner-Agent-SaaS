@@ -70,11 +70,10 @@
 
 ---
 
-## 📦 Prerequisites
-
 - **Python 3.11+**
+- **Node.js 18+** (for frontend)
 - **Git**
-- **Google Gemini API Key** (or OpenAI)
+- **Groq API Key** (Primary LLM)
 - (Optional) OpenWeatherMap & ExchangeRate API Keys
 
 ---
@@ -127,13 +126,19 @@ SUPER_ADMIN_PASSWORD=SuperAdmin@2025!
 
 ---
 
-## ▶️ Running the App
-
-### Step 4 — Start Server
+### Step 4 — Start Backend
 ```bash
 uvicorn app.main:app --reload
 ```
 *Auto-creates tables and seeds super admin on first run.*
+
+### Step 4b — Start Frontend
+```bash
+cd frontend
+npm install
+npm run dev
+```
+*Default frontend: http://localhost:5173*
 
 ### Step 5 — Seed Knowledge Base
 ```bash

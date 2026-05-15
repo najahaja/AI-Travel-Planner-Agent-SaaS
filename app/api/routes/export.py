@@ -24,15 +24,27 @@ async def export_trip_pdf(
     Download a travel plan as a professionally formatted PDF.
     Users can only export their own trips.
     """
-    result = await db.execute(
-        select(TravelPlan).where(
-            TravelPlan.id == trip_id,
-            TravelPlan.user_id == current_user.id,
-        )
-    )
+    # Find the plan
+    result = await db.execute(select(TravelPlan).where(TravelPlan.id == trip_id))
     plan = result.scalar_one_or_none()
     if not plan:
         raise HTTPException(status_code=404, detail="Travel plan not found")
+
+    # Access check: user owns it OR admin manages the user OR superadmin
+    from app.models.user import UserRole
+    is_owner = plan.user_id == current_user.id
+    
+    # Check if admin manages this user
+    is_managed_user = False
+    if current_user.role == UserRole.ADMIN:
+        user_result = await db.execute(select(User.admin_id).where(User.id == plan.user_id))
+        user_admin_id = user_result.scalar()
+        is_managed_user = (user_admin_id == current_user.id)
+
+    is_super = current_user.role == UserRole.SUPER_ADMIN
+
+    if not (is_owner or is_managed_user or is_super):
+        raise HTTPException(status_code=403, detail="Access denied to this travel plan")
 
     try:
         pdf_bytes = generate_itinerary_pdf(
@@ -44,8 +56,9 @@ async def export_trip_pdf(
             weather_info=plan.weather_info,
             user_name=current_user.full_name,
         )
-    except RuntimeError as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        logger.error(f"PDF Generation failed for trip {trip_id}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"PDF Generation failed: {str(e)}")
 
     # Log the export
     await log_action(

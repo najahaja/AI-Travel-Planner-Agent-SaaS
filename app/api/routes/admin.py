@@ -21,10 +21,12 @@ async def list_my_users(
     current_admin: User = Depends(require_admin_or_above),
 ):
     """List users belonging to this admin only."""
-    # Super admin can see all users; regular admin sees only their own
+    # Super admin can see all users AND all admins; regular admin sees only their own users
     if current_admin.role == UserRole.SUPER_ADMIN:
         result = await db.execute(
-            select(User).where(User.role == UserRole.USER).order_by(User.created_at.desc())
+            select(User)
+            .where(User.role.in_([UserRole.USER, UserRole.ADMIN]))
+            .order_by(User.role.desc(), User.created_at.desc()) # Group by role then date
         )
     else:
         result = await db.execute(

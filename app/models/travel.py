@@ -13,6 +13,9 @@ class TravelPlan(Base):
         Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
     destination: Mapped[str] = mapped_column(String(512), nullable=False)
+    session_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("chat_sessions.id", ondelete="SET NULL"), nullable=True
+    )
     start_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     end_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
 

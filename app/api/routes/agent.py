@@ -1,5 +1,5 @@
 """Agent / chat routes — user-facing travel planning endpoint."""
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
@@ -22,11 +22,16 @@ from loguru import logger
 # pyrefly: ignore [missing-import]
 from datetime import date
 
+from app.core.limiter import limiter
+from app.core.config import settings
+
 router = APIRouter(prefix="/agent", tags=["Travel Agent"])
 
 
 @router.post("/chat", response_model=ChatResponse)
+@limiter.limit(settings.RATE_LIMIT_CHAT)
 async def chat(
+    request: Request,
     payload: ChatRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_user_or_above),
@@ -50,13 +55,14 @@ async def chat(
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
 
-        # Load message history
+        # Load only the last 20 messages (10 turns) to avoid token overflow
         msg_result = await db.execute(
             select(Message)
             .where(Message.session_id == session.id)
-            .order_by(Message.timestamp)
+            .order_by(Message.timestamp.desc())
+            .limit(20)
         )
-        db_messages = msg_result.scalars().all()
+        db_messages = list(reversed(msg_result.scalars().all()))
         for m in db_messages:
             if m.role == "user":
                 history_messages.append(HumanMessage(content=m.content))
@@ -107,19 +113,33 @@ async def chat(
     db.add(user_msg)
     db.add(ai_msg)
 
-    # 5. Save travel plan if generated
+    # 5. Save/Update travel plan if generated
     travel_plan_id = None
     if final_state.get("travel_plan"):
         plan_data = final_state["travel_plan"]
-        plan = TravelPlan(
-            user_id=current_user.id,
-            destination=plan_data.get("destination", "Unknown"),
-            itinerary=plan_data.get("itinerary"),
-            budget=plan_data.get("budget"),
-            weather_info=plan_data.get("weather_info"),
-            estimated_cost_usd=plan_data.get("estimated_cost_usd"),
-            notes=f"Generated from chat session {session.id}",
+        
+        # Check if a plan already exists for this session
+        plan_result = await db.execute(
+            select(TravelPlan).where(TravelPlan.session_id == session.id)
         )
+        plan = plan_result.scalars().first()
+        
+        if not plan:
+            plan = TravelPlan(
+                user_id=current_user.id,
+                session_id=session.id,
+                destination=plan_data.get("destination", "Unknown"),
+            )
+            db.add(plan)
+        
+        # Update plan details
+        plan.destination = plan_data.get("destination", "Unknown")
+        plan.itinerary = plan_data.get("itinerary")
+        plan.budget = plan_data.get("budget")
+        plan.weather_info = plan_data.get("weather_info")
+        plan.estimated_cost_usd = plan_data.get("estimated_cost_usd")
+        plan.notes = f"Updated from chat session {session.id}"
+
         # Parse dates if available
         if plan_data.get("start_date"):
             try:
@@ -132,7 +152,6 @@ async def chat(
             except Exception:
                 pass
 
-        db.add(plan)
         await db.flush()  # Get plan.id
         travel_plan_id = plan.id
 
@@ -152,34 +171,48 @@ async def chat(
     )
 
 
+
 @router.get("/sessions", response_model=SessionListResponse)
 async def list_sessions(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_user_or_above),
 ):
     """List all chat sessions for current user."""
-    result = await db.execute(
-        select(ChatSession)
+    # Subquery for message count
+    message_count_sub = (
+        select(Message.session_id, func.count(Message.id).label("count"))
+        .group_by(Message.session_id)
+        .subquery()
+    )
+
+    query = (
+        select(
+            ChatSession,
+            func.coalesce(message_count_sub.c.count, 0).label("message_count"),
+            func.max(TravelPlan.id).label("travel_plan_id")
+        )
+        .outerjoin(message_count_sub, message_count_sub.c.session_id == ChatSession.id)
+        .outerjoin(TravelPlan, TravelPlan.session_id == ChatSession.id)
         .where(ChatSession.user_id == current_user.id)
+        .group_by(ChatSession.id)
         .order_by(ChatSession.created_at.desc())
     )
-    sessions = result.scalars().all()
+    result = await db.execute(query)
+    sessions_data = result.all()
 
-    session_responses = []
-    for s in sessions:
-        count_result = await db.scalar(
-            select(func.count(Message.id)).where(Message.session_id == s.id)
-        )
-        session_responses.append(
+    return SessionListResponse(
+        total=len(sessions_data),
+        sessions=[
             SessionResponse(
-                id=s.id,
-                title=s.title,
-                created_at=s.created_at,
-                message_count=count_result or 0,
+                id=s.ChatSession.id,
+                title=s.ChatSession.title,
+                created_at=s.ChatSession.created_at,
+                message_count=s.message_count,
+                travel_plan_id=s.travel_plan_id
             )
-        )
-
-    return SessionListResponse(total=len(session_responses), sessions=session_responses)
+            for s in sessions_data
+        ],
+    )
 
 
 @router.get("/sessions/{session_id}", response_model=SessionDetailResponse)
@@ -204,11 +237,18 @@ async def get_session(
     )
     messages = msg_result.scalars().all()
 
+    # Find associated travel plan
+    plan_result = await db.execute(
+        select(TravelPlan.id).where(TravelPlan.session_id == session.id)
+    )
+    travel_plan_id = plan_result.scalar_one_or_none()
+
     return SessionDetailResponse(
         id=session.id,
         title=session.title,
         created_at=session.created_at,
         messages=[MessageResponse.model_validate(m) for m in messages],
+        travel_plan_id=travel_plan_id
     )
 
 
@@ -237,16 +277,39 @@ async def list_trips(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_user_or_above),
 ):
-    """List all saved travel plans for current user."""
+    """List all saved travel plans. Role-aware: SuperAdmin (all), Admin (managed users), User (own)."""
+    from app.models.user import UserRole, User
+    
+    if current_user.role == UserRole.SUPER_ADMIN:
+        # Super Admin sees everything
+        query = select(TravelPlan)
+    elif current_user.role == UserRole.ADMIN:
+        # Admin sees their own trips + trips of users they manage
+        # Subquery to get managed user IDs
+        managed_user_ids_sub = select(User.id).where(User.admin_id == current_user.id)
+        query = select(TravelPlan).where(
+            (TravelPlan.user_id == current_user.id) | 
+            (TravelPlan.user_id.in_(managed_user_ids_sub))
+        )
+    else:
+        # Regular user only sees their own
+        query = select(TravelPlan).where(TravelPlan.user_id == current_user.id)
+
+    from sqlalchemy.orm import selectinload
     result = await db.execute(
-        select(TravelPlan)
-        .where(TravelPlan.user_id == current_user.id)
-        .order_by(TravelPlan.created_at.desc())
+        query.options(selectinload(TravelPlan.user)).order_by(TravelPlan.created_at.desc())
     )
     plans = result.scalars().all()
+    
+    response_plans = []
+    for p in plans:
+        resp = TravelPlanResponse.model_validate(p)
+        resp.user_email = p.user.email if p.user else "Unknown"
+        response_plans.append(resp)
+
     return TravelPlanListResponse(
         total=len(plans),
-        plans=[TravelPlanResponse.model_validate(p) for p in plans],
+        plans=response_plans,
     )
 
 

@@ -21,8 +21,7 @@ from app.core.logging import setup_logging
 from app.api.routes import auth, admin, superadmin, agent, reports, export
 
 
-# ── Rate Limiter ───────────────────────────────────────────────────────────────
-limiter = Limiter(key_func=get_remote_address)
+from app.core.limiter import limiter
 
 
 # ── Lifespan ───────────────────────────────────────────────────────────────────
@@ -130,8 +129,16 @@ app.add_middleware(
 
 
 # ── Global Exception Handler ───────────────────────────────────────────────────
+from fastapi import HTTPException
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
+    if isinstance(exc, HTTPException):
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail},
+        )
+    
     logger.error("Unhandled exception: {}", exc, exc_info=True)
     return JSONResponse(
         status_code=500,

@@ -29,6 +29,7 @@ class SessionResponse(BaseModel):
     title: str
     created_at: datetime
     message_count: int = 0
+    travel_plan_id: Optional[int] = None
 
     model_config = {"from_attributes": True}
 
@@ -38,6 +39,7 @@ class SessionDetailResponse(BaseModel):
     title: str
     created_at: datetime
     messages: List[MessageResponse]
+    travel_plan_id: Optional[int] = None
 
     model_config = {"from_attributes": True}
 

@@ -101,13 +101,13 @@ def generate_itinerary_pdf(
 
             budget_data = [
                 ["Category", "Per Person (USD)", ""],
-                ["Flights", f"${pp.get('flight_usd', 0):,.0f}", ""],
-                ["Accommodation", f"${pp.get('accommodation_usd', 0):,.0f}", f"{days} nights"],
-                ["Food & Dining", f"${pp.get('food_usd', 0):,.0f}", ""],
-                ["Local Transport", f"${pp.get('local_transport_usd', 0):,.0f}", ""],
-                ["Activities", f"${pp.get('activities_usd', 0):,.0f}", ""],
-                ["Miscellaneous", f"${pp.get('miscellaneous_usd', 0):,.0f}", "10% buffer"],
-                ["TOTAL (all travelers)", f"${total:,.0f}", f"{travelers} traveler(s), {tier}"],
+                ["Flights", f"${(pp.get('flight_usd') or 0):,.0f}", ""],
+                ["Accommodation", f"${(pp.get('accommodation_usd') or 0):,.0f}", f"{days} nights"],
+                ["Food & Dining", f"${(pp.get('food_usd') or 0):,.0f}", ""],
+                ["Local Transport", f"${(pp.get('local_transport_usd') or 0):,.0f}", ""],
+                ["Activities", f"${(pp.get('activities_usd') or 0):,.0f}", ""],
+                ["Miscellaneous", f"${(pp.get('miscellaneous_usd') or 0):,.0f}", "10% buffer"],
+                ["TOTAL (all travelers)", f"${(total or 0):,.0f}", f"{(travelers or 1)} traveler(s), {tier}"],
             ]
             t = Table(budget_data, colWidths=[8 * cm, 5 * cm, 4 * cm])
             t.setStyle(TableStyle([

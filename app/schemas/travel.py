@@ -6,6 +6,7 @@ from datetime import date, datetime
 class TravelPlanResponse(BaseModel):
     id: int
     user_id: int
+    user_email: Optional[str] = None
     destination: str
     start_date: Optional[date]
     end_date: Optional[date]
