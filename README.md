@@ -25,7 +25,6 @@
 - [Audit Logs & Reports](#audit-logs--reports)
 - [PDF Export](#pdf-export)
 - [Testing & CI/CD](#testing--cicd)
-- [Docker Deployment](#docker-deployment)
 - [Project Structure](#project-structure)
 
 ---
@@ -44,7 +43,6 @@
 | 💰 **Budget** | Intelligent cost estimation by region and tier |
 | 💱 **Currency** | Live exchange rates for 35+ currencies |
 | 📱 **Multi-turn** | Session-based conversation memory |
-| 🐳 **Docker** | Full containerization with docker-compose |
 | 🚀 **CI/CD** | GitHub Actions for automated testing and linting |
 
 ---
@@ -204,15 +202,6 @@ ruff check app/
 
 ---
 
-## 🐳 Docker Deployment
-
-```bash
-cd docker
-docker-compose up --build -d
-```
-
----
-
 ## 🛠️ Challenges Faced & Solutions
 
 During development, several technical hurdles were overcome to ensure a production-grade experience:
@@ -238,8 +227,7 @@ travel-planner-agent/
 │   └── rag/             # ChromaDB retrieval pipeline
 ├── scripts/             # Data seeding
 ├── tests/               # Pytest suite + conftest
-├── .github/workflows/   # CI/CD
-└── docker/              # Containerization
+└── .github/workflows/   # CI/CD
 ```
 
 ---
