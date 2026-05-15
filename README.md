@@ -232,4 +232,12 @@ travel-planner-agent/
 
 ---
 
+## 📄 License
+
+This project is licensed under the **MIT License**. See the [LICENSE](LICENSE) file for more details.
+
+---
+
+⭐ **Give this project a star if you find it useful or like the implementation!**
+
 *Built for Enterprise Travel Planning — 2026*
