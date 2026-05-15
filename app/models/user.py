@@ -54,9 +54,11 @@ class User(Base):
         foreign_keys="[User.admin_id]",
     )
 
+    # pyrefly: ignore [missing-import-error, unknown-type]
     chat_sessions: Mapped[List["ChatSession"]] = relationship(  # noqa: F821
         "ChatSession", back_populates="user", cascade="all, delete-orphan"
     )
+    # pyrefly: ignore [missing-import-error, unknown-type]
     travel_plans: Mapped[List["TravelPlan"]] = relationship(  # noqa: F821
         "TravelPlan", back_populates="user", cascade="all, delete-orphan"
     )

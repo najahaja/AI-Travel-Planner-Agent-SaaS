@@ -40,7 +40,7 @@ class AuditLog(Base):
     )
 
     # Relationship — optional, don't cascade (keep logs even if user deleted)
-    user: Mapped[Optional["User"]] = relationship("User", foreign_keys=[user_id])  # noqa: F821
+    user: Mapped[Optional["User"]] = relationship("User", foreign_keys=[user_id])
 
     def __repr__(self) -> str:
         return f"<AuditLog id={self.id} action={self.action} user_id={self.user_id}>"

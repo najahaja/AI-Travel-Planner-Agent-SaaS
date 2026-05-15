@@ -2,7 +2,8 @@
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.audit_log import AuditLog
-from loguru import logger
+# pyrefly: ignore [missing-import]
+from loguru import logger 
 
 
 class AuditActions:

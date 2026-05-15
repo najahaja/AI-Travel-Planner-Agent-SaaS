@@ -7,6 +7,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 # pyrefly: ignore [missing-import]
 from loguru import logger
 import json
+import asyncio
 
 
 async def build_itinerary(
@@ -102,7 +103,21 @@ Make it practical, exciting, and include local gems beyond typical tourist spots
 
     try:
         llm = get_llm()
-        result = await llm.ainvoke([
+
+        async def _invoke_with_retry(messages, max_retries=3, delay=5.0):
+            for attempt in range(max_retries):
+                try:
+                    return await llm.ainvoke(messages)
+                except Exception as e:
+                    err = str(e).lower()
+                    if ("rate_limit" in err or "429" in err or "too many" in err) and attempt < max_retries - 1:
+                        wait = delay * (attempt + 1)
+                        logger.warning(f"[Itinerary] Rate limit, retrying in {wait}s...")
+                        await asyncio.sleep(wait)
+                    else:
+                        raise
+
+        result = await _invoke_with_retry([
             SystemMessage(content=system_content),
             HumanMessage(content=user_content),
         ])

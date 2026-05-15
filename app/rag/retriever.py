@@ -13,12 +13,15 @@ warnings.filterwarnings("ignore", message=".*telemetry.*")
 
 # Brute-force monkeypatch to silence the "capture() takes 1 positional argument" error
 # which occurs due to version mismatch between ChromaDB 0.5.0 and newer PostHog versions.
+
 try:
+    # pyrefly: ignore [missing-import]
     import posthog
     def no_op_capture(*args, **kwargs):
         pass
     posthog.capture = no_op_capture
     
+    # pyrefly: ignore [missing-import, missing-import-error]
     import chromadb.telemetry.product.posthog
     if hasattr(chromadb.telemetry.product.posthog, "Posthog"):
         chromadb.telemetry.product.posthog.Posthog._direct_capture = no_op_capture
@@ -28,7 +31,9 @@ except Exception:
     pass
 
 from typing import List, Optional
+# pyrefly: ignore [missing-import]
 from loguru import logger
+# pyrefly: ignore [missing-import]
 from app.core.config import settings
 
 # Lazy-loaded singletons
@@ -40,6 +45,7 @@ _embedding_fn = None
 def _get_embedding_function():
     global _embedding_fn
     if _embedding_fn is None:
+        # pyrefly: ignore [missing-import, missing-import-error]
         from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
         _embedding_fn = SentenceTransformerEmbeddingFunction(
             model_name=settings.EMBEDDING_MODEL
@@ -50,7 +56,9 @@ def _get_embedding_function():
 def _get_collection():
     global _chroma_client, _collection
     if _collection is None:
+        # pyrefly: ignore [missing-import, missing-import-error]
         import chromadb
+        # pyrefly: ignore [missing-import]
         from chromadb.config import Settings
         
         # Initialize client with explicit telemetry disabled to avoid library conflicts

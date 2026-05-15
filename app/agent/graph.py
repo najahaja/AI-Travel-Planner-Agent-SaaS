@@ -12,6 +12,7 @@ from typing import TypedDict, Annotated, List, Optional, Any, Dict
 from datetime import datetime
 import operator
 import json
+import asyncio
 
 # pyrefly: ignore [missing-import]
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage
@@ -26,6 +27,23 @@ from app.agent.tools.places import search_places_to_visit, format_places_for_pro
 from app.rag.retriever import retrieve_travel_info
 # pyrefly: ignore [missing-import]
 from loguru import logger
+
+
+# ── Retry helper for Groq rate limiting ──────────────────────────────────────
+async def invoke_with_retry(llm, messages, max_retries: int = 3, delay: float = 5.0):
+    """Invoke the LLM with automatic retries on rate limit errors."""
+    for attempt in range(max_retries):
+        try:
+            return await llm.ainvoke(messages)
+        except Exception as e:
+            error_str = str(e).lower()
+            is_rate_limit = "rate_limit" in error_str or "429" in error_str or "too many" in error_str
+            if is_rate_limit and attempt < max_retries - 1:
+                wait_time = delay * (attempt + 1)  # 5s, 10s, 15s
+                logger.warning(f"[LLM] Groq rate limit hit. Retrying in {wait_time}s (attempt {attempt + 1}/{max_retries})...")
+                await asyncio.sleep(wait_time)
+            else:
+                raise
 
 
 # Agent State
@@ -78,9 +96,25 @@ async def classify_intent(state: AgentState) -> AgentState:
     """Classify user intent and extract key travel parameters."""
     llm = get_llm()
 
+    # Build recent history for context-aware classification
+    recent_history = ""
+    past_messages = state.get("messages", [])
+    if past_messages:
+        history_lines = []
+        for m in past_messages:
+            role = "User" if isinstance(m, HumanMessage) else "Assistant"
+            content = m.content if isinstance(m.content, str) else str(m.content)
+            history_lines.append(f"{role}: {content[:300]}")
+        recent_history = "\n".join(history_lines)
+
+    history_section = (
+        f"\n\nPrevious conversation (use this to resolve references and carry over destination/dates):\n{recent_history}"
+        if recent_history else ""
+    )
+
     classification_prompt = f"""You are a travel intent classifier. Analyze the user message and extract:
 1. intent: one of [itinerary_planning, budget_estimation, weather_info, general_question, destination_research, greeting, unclear]
-2. destination: city/country if mentioned (null if not)
+2. destination: city/country if mentioned (null if not). If not in current message, infer from conversation history.
 3. start_date: travel start date if mentioned in YYYY-MM-DD format (null if not)
 4. end_date: travel end date if mentioned in YYYY-MM-DD format (null if not)
 5. travelers: number of travelers if mentioned (null if not)
@@ -89,12 +123,12 @@ async def classify_intent(state: AgentState) -> AgentState:
 Use destination_research when the user asks for attractions, landmarks, things to do, places to visit, restaurants, museums, activities, or destination recommendations without asking for a full day-by-day itinerary.
 
 Respond ONLY with valid JSON. No explanation. Example:
-{{"intent": "itinerary_planning", "destination": "Paris", "start_date": "2025-06-01", "end_date": "2025-06-07", "travelers": 2, "budget_range": "mid-range"}}
+{{"intent": "itinerary_planning", "destination": "Paris", "start_date": "2025-06-01", "end_date": "2025-06-07", "travelers": 2, "budget_range": "mid-range"}}{history_section}
 
-User message: {state["user_query"]}"""
+Current user message: {state["user_query"]}"""
 
     try:
-        result = await llm.ainvoke([HumanMessage(content=classification_prompt)])
+        result = await invoke_with_retry(llm, [HumanMessage(content=classification_prompt)])
 
         # Ensure content is string
         raw = result.content
@@ -256,34 +290,24 @@ async def synthesize_response(state: AgentState) -> AgentState:
 
     gathered_context = "\n\n".join(context_parts) if context_parts else "No additional data gathered."
 
-    # Build conversation history string (last 6 messages)
-    history_text = ""
-    past_messages = state.get("messages", [])[-6:]
-    if past_messages:
-        history_lines = []
-        for m in past_messages:
-            role = "User" if isinstance(m, HumanMessage) else "Assistant"
-            content = m.content if isinstance(m.content, str) else str(m.content)
-            history_lines.append(f"{role}: {content}")
-        history_text = "\n".join(history_lines)
+    # Truncate gathered_context to avoid token overflow (Groq limit)
+    MAX_CONTEXT_CHARS = 6000
+    if len(gathered_context) > MAX_CONTEXT_CHARS:
+        gathered_context = gathered_context[:MAX_CONTEXT_CHARS] + "\n...[context truncated to fit token limit]"
 
-    # Single prompt string — Groq works best with simple message lists
-    system_message = f"""{SYSTEM_PROMPT}
+    # Construct system message
+    system_message = f"{SYSTEM_PROMPT}\n\nUse the following gathered data to craft your response:\n\n{gathered_context}"
 
-Use the following gathered data to craft your response:
-
-{gathered_context}"""
-
-    user_message = ""
-    if history_text:
-        user_message += f"Previous conversation:\n{history_text}\n\n"
-    user_message += f"Current question: {state['user_query']}"
+    # Use conversation history
+    messages = [SystemMessage(content=system_message)]
+    past_messages = state.get("messages", [])
+    # Include up to the last 6 messages as context
+    for m in past_messages[-6:]:
+        messages.append(m)
+    messages.append(HumanMessage(content=state["user_query"]))
 
     try:
-        result = await llm.ainvoke([
-            SystemMessage(content=system_message),
-            HumanMessage(content=user_message),
-        ])
+        result = await invoke_with_retry(llm, messages)
 
         # Ensure content is string
         response = result.content
@@ -311,11 +335,13 @@ Use the following gathered data to craft your response:
             **state,
             "final_response": response,
             "travel_plan": travel_plan,
-            "messages": state.get("messages", []) + [AIMessage(content=response)],
+            "messages": [AIMessage(content=response)],
         }
 
     except Exception as e:
-        logger.error(f"Synthesis error: {e}")
+        import traceback
+        logger.error(f"Synthesis error: {type(e).__name__}: {e}")
+        logger.error(traceback.format_exc())
         error_msg = "I apologize, I encountered an error processing your request. Please try again."
         return {**state, "final_response": error_msg, "error": str(e)}
 

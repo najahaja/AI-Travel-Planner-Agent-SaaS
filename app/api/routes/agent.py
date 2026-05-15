@@ -55,7 +55,6 @@ async def chat(
             select(Message)
             .where(Message.session_id == session.id)
             .order_by(Message.timestamp)
-            .limit(20)
         )
         db_messages = msg_result.scalars().all()
         for m in db_messages:

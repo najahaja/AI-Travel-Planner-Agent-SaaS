@@ -20,7 +20,7 @@ def get_llm() -> BaseChatModel:
             "GROQ_API_KEY is not set in .env — "
             "get a free key at https://console.groq.com"
         )
-    # pyrefly: ignore [missing-import-error]
+    # pyrefly: ignore [missing-import, missing-import-error]
     from langchain_groq import ChatGroq
     logger.info(f"[LLM] Initializing Groq model: {settings.LLM_MODEL}")
     # pyrefly: ignore [missing-import-error]

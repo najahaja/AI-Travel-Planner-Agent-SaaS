@@ -1,8 +1,10 @@
 """Weather tool — uses OpenWeatherMap API with graceful fallback."""
+# pyrefly: ignore [missing-import]
 import httpx
 from typing import Optional, Dict, Any
 from datetime import datetime
 from app.core.config import settings
+# pyrefly: ignore [missing-import]
 from loguru import logger
 
 

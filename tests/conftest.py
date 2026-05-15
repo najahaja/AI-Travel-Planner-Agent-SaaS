@@ -1,11 +1,17 @@
 """Shared pytest fixtures for all test files."""
+# pyrefly: ignore [missing-import]
 import pytest
+# pyrefly: ignore [missing-import]
 import pytest_asyncio
+# pyrefly: ignore [missing-import]
 from httpx import AsyncClient, ASGITransport
+# pyrefly: ignore [missing-import]
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-
+# pyrefly: ignore [missing-import]
 from app.main import app
+# pyrefly: ignore [missing-import]
 from app.core.database import Base, get_db
+# pyrefly: ignore [missing-import]
 from app.core.security import hash_password
 from app.models.user import User, UserRole
 
