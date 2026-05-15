@@ -5,6 +5,8 @@
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.111-green.svg)](https://fastapi.tiangolo.com)
 [![LangGraph](https://img.shields.io/badge/LangGraph-0.1-orange.svg)](https://langchain-ai.github.io/langgraph/)
+[![React](https://img.shields.io/badge/React-18-61DAFB.svg)](https://reactjs.org)
+[![Vite](https://img.shields.io/badge/Vite-5-646CFF.svg)](https://vitejs.dev)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ---
@@ -208,6 +210,18 @@ ruff check app/
 cd docker
 docker-compose up --build -d
 ```
+
+---
+
+## 🛠️ Challenges Faced & Solutions
+
+During development, several technical hurdles were overcome to ensure a production-grade experience:
+
+1. **Database Schema Evolution**: Mid-development, we transitioned to a session-based model which required adding `session_id` to the existing SQLite `travel_plans` table. We implemented a custom migration script to ensure no data loss during this transition.
+2. **PDF Generation Constraints**: Generating professional PDFs in a serverless-ready environment required careful handling of the `reportlab` library and ensuring it was robust against `null` values returned from AI estimations.
+3. **Multi-Tenant Isolation**: Ensuring that Admins can only see *their* users while Super Admins see *all* data required complex SQLAlchemy join queries and role-aware API routing.
+4. **LLM Rate Limiting**: To prevent API abuse and cost overruns with Groq, we integrated `slowapi` to enforce a 20 requests/minute limit on the chat endpoint.
+5. **Real-time State Management**: Managing the synchronization between the React frontend and the LangGraph backend state (especially for itinerary updates) required a robust polling and session management strategy.
 
 ---
 
